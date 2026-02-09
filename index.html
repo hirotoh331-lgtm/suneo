@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>母音リズムゲーム</title>
+<style>
+  body { 
+    margin: 0; padding: 0;
+    background: #000; color: white; 
+    font-family: 'Arial Black', sans-serif;
+    text-align: center; 
+    overflow: hidden; user-select: none;
+    width: 100vw; height: 100vh;
+    touch-action: none; /* スマホでのスクロールやズームを完全無効化 */
+    -webkit-touch-callout: none;
+  }
+
+  /* 背景動画 */
+  #bgVideo {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 100%; min-height: 100%;
+    width: auto; height: auto;
+    z-index: -2;
+    object-fit: cover;
+  }
+
+  #overlay {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
+  }
+
+  /* ゲームエリア */
+  #gameContainer {
+    position: absolute;
+    bottom: 50px; left: 50%;
+    transform: translateX(-50%);
+    width: 90%; max-width: 800px;
+    height: 140px;
+    background: rgba(0, 0, 0, 0.7);
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    z-index: 10;
+    overflow: hidden;
+  }
+
+  /* 判定ライン */
+  #judgeLine {
+    position: absolute; left: 150px; top: 0;
+    width: 6px; height: 100%;
+    background: #00ffff; 
+    box-shadow: 0 0 20px #00ffff;
+    z-index: 5;
+  }
+
+  .hit-flash { animation: flashAnim 0.08s ease-out; }
+  @keyframes flashAnim {
+    0% { background: white; box-shadow: 0 0 50px white; transform: scaleX(2); }
+    100% { background: #00ffff; box-shadow: 0 0 20px #00ffff; transform: scaleX(1); }
+  }
+
+  /* ノーツ */
+  .note {
+    position: absolute; top: 45px; 
+    font-size: 50px; color: white; font-weight: 900;
+    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+  }
+
+  /* パーティクル */
+  .particle {
+    position: absolute; width: 10px; height: 10px;
+    background: gold; border-radius: 50%; pointer-events: none; z-index: 100;
+  }
+
+  /* UIレイヤー */
+  #uiLayer {
+    position: absolute; top: 20px; left: 0; width: 100%;
+    z-index: 20; pointer-events: none;
+  }
+  #scoreBoard { 
+    font-size: 30px; font-weight: 900; 
+    text-shadow: 0 0 15px cyan;
+    transition: transform 0.05s;
+  }
+  .bump { transform: scale(1.2); }
+
+  /* 判定文字 */
+  #feedback {
+    position: absolute; 
+    top: 50%; left: 150px; 
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 50px; font-weight: 900;
+    opacity: 0; text-shadow: 0 0 20px white;
+    pointer-events: none; white-space: nowrap; z-index: 50;
+  }
+  .pop-text { animation: popAnim 0.3s forwards; }
+  @keyframes popAnim {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0); }
+  }
+
+  /* スタートボタン */
+  #startBtn {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 15px 60px; font-size: 24px; 
+    cursor: pointer; z-index: 30;
+    border: none; background: #00ffff; color: #000;
+    font-weight: bold; border-radius: 50px;
+    box-shadow: 0 0 30px #00ffff;
+  }
+  
+  /* スマホ用タップエリア */
+  #tapZone {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9; display: none;
+  }
+</style>
+</head>
+<body>
+
+<video id="bgVideo" src="kyofu.mp4" playsinline muted></video>
+<div id="overlay"></div>
+<audio id="bgm" src="kyofu.mp3"></audio>
+<div id="uiLayer">
+  <div id="scoreBoard">Score: 0 | Combo: 0</div>
+  <div style="font-size:12px; margin-top:5px; opacity:0.7">PC: Keyboard / Mobile: Tap Anywhere</div>
+</div>
+
+<div id="gameContainer">
+  <div id="judgeLine"></div>
+  <div id="feedback"></div>
+</div>
+
+<button id="startBtn">START</button>
+<div id="tapZone"></div>
+
+<script>
+/* =========================================
+   1. 設定
+   ========================================= */
+const BPM = 135;        
+const NOTE_SPEED = 500; 
+const JUDGE_X = 150;    
+const COUNTDOWN_SEC = 3.0; 
+
+function getGameWidth() {
+  return document.getElementById("gameContainer").clientWidth;
+}
+
+const chartData = [
+  { key: "o", beat: 0 }, { key: "o", beat: 0.75 }, { key: "e", beat: 1 },
+  { key: "a", beat: 1.75 }, { key: "u", beat: 2.25 }, { key: "n", beat: 2.75 },
+  { key: "a", beat: 3.25 }, { key: "n", beat: 3.5 }, { key: "o", beat: 4.25 },
+  { key: "a", beat: 4.75 }, { key: "a", beat: 5.75 }, { key: "a", beat: 6.25 },
+  { key: "e", beat: 8 }, { key: "n", beat: 8.25 }, { key: "i", beat: 9.25 },
+  { key: "a", beat: 9.5 }, { key: "i", beat: 10.25 }, { key: "i", beat: 10.75 },
+  { key: "o", beat: 11.25 }, { key: "i", beat: 11.75 }, { key: "u", beat: 12.25 },
+  { key: "u", beat: 12.75 }, { key: "e", beat: 13.25 }, { key: "a", beat: 13.75 },
+  { key: "i", beat: 14.25 }, { key: "a", beat: 15.25 }, { key: "e", beat: 16.25 },
+  { key: "u", beat: 17.25 }, { key: "o", beat: 17.75 }, { key: "u", beat: 18.25 },
+  { key: "i", beat: 18.75 }, { key: "e", beat: 19.25 }, { key: "o", beat: 20 },
+  { key: "a", beat: 20.75 }, { key: "u", beat: 21.25 }, { key: "a", beat: 21.75 },
+  { key: "i", beat: 22.25 }, { key: "e", beat: 24 }, { key: "i", beat: 24.25 },
+  { key: "i", beat: 24.75 }, { key: "e", beat: 25 }, { key: "i", beat: 25.25 },
+  { key: "i", beat: 26 }, { key: "e", beat: 26 }, { key: "i", beat: 26.5 },
+  { key: "i", beat: 27.25 }, { key: "o", beat: 27.75 }, { key: "o", beat: 28 },
+  { key: "u", beat: 29 }, { key: "a", beat: 29 }, { key: "u", beat: 30.25 },
+];
+
+/* =========================================
+   2. ゲームエンジン
+   ========================================= */
+const audio = document.getElementById("bgm");
+const video = document.getElementById("bgVideo");
+const container = document.getElementById("gameContainer");
+const judgeLine = document.getElementById("judgeLine");
+const scoreEl = document.getElementById("scoreBoard");
+const feedbackEl = document.getElementById("feedback");
+const startBtn = document.getElementById("startBtn");
+const tapZone = document.getElementById("tapZone");
+
+let isPlaying = false;
+let startTime = 0;
+let score = 0;
+let combo = 0;
+let noteIndex = 0;
+let activeNotes = [];
+let mediaStarted = false;
+let lastCountInt = -1;
+let audioCtx = null;
+
+// スタートボタン（ユーザーアクション必須）
+startBtn.onclick = () => {
+  if (isPlaying) return;
+  // AudioContextの初期化（ブラウザ制限対策）
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  
+  startBtn.style.display = "none";
+  tapZone.style.display = "block"; // スマホ用タップゾーン有効化
+  
+  score = 0; combo = 0; noteIndex = 0; activeNotes = [];
+  mediaStarted = false; lastCountInt = Math.ceil(COUNTDOWN_SEC);
+  
+  container.querySelectorAll(".note").forEach(n => n.remove());
+  container.querySelectorAll(".particle").forEach(p => p.remove());
+  updateScore();
+
+  startTime = performance.now() + (COUNTDOWN_SEC * 1000);
+  isPlaying = true;
+  requestAnimationFrame(gameLoop);
+};
+
+function gameLoop() {
+  if (!isPlaying) return;
+  
+  const now = performance.now();
+  const musicTime = (now - startTime) / 1000;
+
+  // カウントダウン処理
+  if (musicTime < 0) {
+    const count = Math.ceil(-musicTime);
+    if (count !== lastCountInt && count > 0) {
+      showFeedback(count, "#ffff00");
+      playSystemSound("beep");
+      lastCountInt = count;
+    }
+  } else {
+    // 楽曲・動画スタート
+    if (!mediaStarted) {
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log("Audio play failed", e));
+      video.currentTime = 0;
+      video.play().catch(e => console.log("Video play failed", e)); 
+      mediaStarted = true;
+      showFeedback("GO!", "#00ffff");
+      playSystemSound("start");
+    }
+    // 同期補正（動画が遅れた場合）
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      video.currentTime = audio.currentTime;
+    }
+  }
+
+  // ノーツ生成
+  while (noteIndex < chartData.length) {
+    const data = chartData[noteIndex];
+    const targetTime = data.beat * (60 / BPM);
+    const currentWidth = getGameWidth();
+    const travelTime = (currentWidth - JUDGE_X) / NOTE_SPEED;
+    const spawnTime = targetTime - travelTime;
+
+    if (musicTime >= spawnTime) {
+      spawnNote(data, targetTime);
+      noteIndex++;
+    } else {
+      break;
+    }
+  }
+
+  // ノーツ移動と判定
+  activeNotes.forEach((noteObj, index) => {
+    const timeRemaining = noteObj.time - musicTime;
+    const x = JUDGE_X + (timeRemaining * NOTE_SPEED);
+    noteObj.el.style.left = x + "px";
+
+    if (x < -100) { 
+      showFeedback("Miss...", "#555");
+      combo = 0;
+      updateScore();
+      noteObj.el.remove();
+      activeNotes.splice(index, 1);
+    }
+  });
+
+  // 終了処理
+  if (mediaStarted && audio.ended) {
+    endGame();
+  } else {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function endGame() {
+    isPlaying = false;
+    startBtn.style.display = "block";
+    startBtn.textContent = "REPLAY";
+    tapZone.style.display = "none";
+    video.pause();
+    alert(`Game Clear! Score: ${score}`);
+}
+
+function spawnNote(data, targetTime) {
+  const el = document.createElement("div");
+  el.className = "note";
+  el.textContent = data.key.toUpperCase();
+  container.appendChild(el);
+  activeNotes.push({ el: el, key: data.key, time: targetTime, hit: false });
+}
+
+/* =========================================
+   3. 入力判定
+   ========================================= */
+// キーボード (PC)
+document.addEventListener("keydown", e => {
+  if (!isPlaying) return;
+  const key = e.key.toLowerCase();
+  if (["a","i","u","e","o","n"].includes(key)) {
+    processInput(key);
+  } else {
+    triggerLineFlash(); // リズムに乗って空打ちした時も光らせる
+  }
+});
+
+// タップ (スマホ) - 画面のどこを触ってもOK
+tapZone.addEventListener("touchstart", (e) => {
+    e.preventDefault(); // 拡大などを防ぐ
+    if (!isPlaying) return;
+    // タップ位置に関係なく「一番手前のノーツ」を叩いたことにする
+    processInput("auto");
+}, {passive: false});
+
+function processInput(key) {
+  triggerLineFlash();
+  const now = (performance.now() - startTime) / 1000;
+  
+  let targetNote;
+  if (key === "auto") {
+      // 自動判定モード（スマホ）：判定圏内にある一番古いノーツ
+      targetNote = activeNotes.find(n => !n.hit && Math.abs(n.time - now) < 0.3);
+  } else {
+      // キー指定モード（PC）：キーが一致するノーツ
+      targetNote = activeNotes.find(n => !n.hit && n.key === key && Math.abs(n.time - now) < 0.3);
+  }
+
+  if (targetNote) {
+    const diff = Math.abs(targetNote.time - now);
+    if (diff < 0.1) { 
+      judge(targetNote, "PERFECT!!", "#ff00ff", 100, true);
+    } else if (diff < 0.25) {
+      judge(targetNote, "Great!", "#00ff00", 50, false);
+    } else {
+      judge(targetNote, "Good", "#ffff00", 20, false);
+    }
+  }
+}
+
+function judge(noteObj, text, color, point, isPerfect) {
+  noteObj.hit = true;
+  noteObj.el.remove();
+  const idx = activeNotes.indexOf(noteObj);
+  if (idx > -1) activeNotes.splice(idx, 1);
+  
+  score += point;
+  combo++;
+  updateScore();
+  showFeedback(text, color);
+  createParticles(color);
+  
+  if (isPerfect) playSystemSound("perfect");
+  else playSystemSound("hit");
+}
+
+function triggerLineFlash() {
+  judgeLine.classList.remove("hit-flash");
+  void judgeLine.offsetWidth; 
+  judgeLine.classList.add("hit-flash");
+}
+
+function updateScore() {
+  scoreEl.innerHTML = `Score: ${score} <span style="font-size:0.6em; color:#888;">|</span> Combo: <span style="color:cyan">${combo}</span>`;
+  scoreEl.classList.remove("bump");
+  void scoreEl.offsetWidth;
+  scoreEl.classList.add("bump");
+  setTimeout(() => scoreEl.classList.remove("bump"), 50);
+}
+
+function showFeedback(text, color) {
+  feedbackEl.textContent = text;
+  feedbackEl.style.color = color;
+  feedbackEl.classList.remove("pop-text");
+  void feedbackEl.offsetWidth; 
+  feedbackEl.classList.add("pop-text");
+}
+
+function createParticles(color) {
+  const particleCount = 12;
+  for (let i = 0; i < particleCount; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    p.style.backgroundColor = color;
+    p.style.left = JUDGE_X + "px";
+    p.style.top = "70px";
+    
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = Math.random() * 80 + 40;
+    const tx = Math.cos(angle) * velocity;
+    const ty = Math.sin(angle) * velocity;
+    
+    p.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+    container.appendChild(p);
+
+    requestAnimationFrame(() => {
+      p.style.transform = `translate(${tx}px, ${ty}px) scale(0)`;
+      p.style.opacity = 0;
+    });
+    setTimeout(() => p.remove(), 400);
+  }
+}
+
+/* =========================================
+   4. サウンド生成 (Pattern B: Heavy Drums)
+   ========================================= */
+function playSystemSound(type) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+
+  if (type === "perfect") {
+    // バスドラム（ドンッ！）
+    osc.type = "sine"; 
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.15);
+    gain.gain.setValueAtTime(0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (type === "hit") {
+    // スネアリム（カッ）
+    osc.type = "square";
+    osc.frequency.setValueAtTime(800, now);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "beep") {
+    // カウントダウン
+    osc.type = "square";
+    osc.frequency.value = 800;
+    gain.gain.setValueAtTime(0.1, now);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "start") {
+    // スタート音
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.linearRampToValueAtTime(1200, now + 0.5);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.5);
+  }
+}
+</script>
+</body>
+</html>
