@@ -16,15 +16,20 @@
     -webkit-touch-callout: none;
   }
 
-  /* 背景動画 */
+  /* 背景動画（回転・サイズ修正版） */
   #bgVideo {
     position: absolute;
     top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 100%; min-height: 100%;
-    width: auto; height: auto;
+    
+    /* 修正: 90deg から -90deg に変更して上下反転を直しました */
+    transform: translate(-50%, -50%) rotate(-90deg);
+    
+    /* 回転しているので、幅と高さを画面サイズと逆にしてフィットさせます */
+    width: 100vh; 
+    height: 100vw; 
+    
+    object-fit: cover; 
     z-index: -2;
-    object-fit: cover;
   }
 
   #overlay {
@@ -156,7 +161,7 @@ function getGameWidth() {
   return document.getElementById("gameContainer").clientWidth;
 }
 
-// ★★★ 組み込み完了した譜面データ ★★★
+// 譜面データ
 const chartData = [
   { key: "i", beat: 49.04 },
   { key: "a", beat: 50.07 },
