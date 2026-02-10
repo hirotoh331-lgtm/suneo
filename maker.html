@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>譜面メーカー (0.5倍速対応)</title>
+<style>
+  body {
+    background: #222; color: #fff;
+    font-family: monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 20px;
+  }
+  h1 { margin: 0 0 10px 0; color: #00ffff; }
+  
+  #previewArea {
+    position: relative;
+    width: 480px; height: 270px;
+    background: #000;
+    border: 2px solid #555;
+    margin-bottom: 10px;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  
+  #overlay {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex; justify-content: center; align-items: center;
+    font-size: 80px; font-weight: bold;
+    color: yellow;
+    text-shadow: 0 0 10px red;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .flash { opacity: 1 !important; }
+
+  .controls {
+    background: #333; padding: 15px; border-radius: 10px;
+    display: flex; gap: 15px; align-items: center; margin-bottom: 20px;
+  }
+  
+  button {
+    padding: 10px 20px; font-size: 16px; cursor: pointer;
+    background: #444; color: white; border: 1px solid #666;
+  }
+  button:hover { background: #666; }
+  #recBtn.recording { background: red; border-color: red; }
+
+  label { display: flex; flex-direction: column; font-size: 12px; }
+  input, select { padding: 5px; font-size: 16px; margin-top: 2px; }
+
+  textarea {
+    width: 80%; height: 200px;
+    background: #111; color: #0f0;
+    border: 1px solid #444; padding: 10px;
+  }
+  
+  .instruction { margin-bottom: 10px; color: #aaa; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>譜面メーカー</h1>
+<div class="instruction">
+  キー操作: A, I, U, E, O, N (キーボード)<br>
+  ※0.5倍速で打っても、正しいタイミングで記録されます。
+</div>
+
+<div id="previewArea">
+  <video id="video" src="kyofu.mp4" muted playsinline></video>
+  <div id="overlay"></div>
+</div>
+
+<audio id="audio" src="kyofu.mp3"></audio>
+
+<div class="controls">
+  <label>
+    BPM (テンポ)
+    <input type="number" id="bpmInput" value="135">
+  </label>
+
+  <label>
+    再生速度
+    <select id="speedSelect">
+      <option value="1.0">1.0倍 (等倍)</option>
+      <option value="0.75">0.75倍</option>
+      <option value="0.5">0.5倍 (ゆっくり)</option>
+      <option value="0.25">0.25倍 (超スロー)</option>
+    </select>
+  </label>
+
+  <button id="recBtn">● REC START</button>
+  <button id="stopBtn">■ STOP</button>
+  <button id="clearBtn">クリア</button>
+</div>
+
+<textarea id="output" readonly placeholder="ここにデータが出力されます..."></textarea>
+<button onclick="copyToClipboard()" style="margin-top:5px;">データをコピー</button>
+
+<script>
+  const video = document.getElementById('video');
+  const audio = document.getElementById('audio');
+  const overlay = document.getElementById('overlay');
+  const recBtn = document.getElementById('recBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const output = document.getElementById('output');
+  const bpmInput = document.getElementById('bpmInput');
+  const speedSelect = document.getElementById('speedSelect');
+
+  let isRecording = false;
+  let recordedNotes = [];
+
+  // 設定：キーと母音の対応
+  const keyMap = {
+    'a': 'a', 'i': 'i', 'u': 'u', 'e': 'e', 'o': 'o', 'n': 'n'
+  };
+
+  // 再生速度の変更
+  speedSelect.addEventListener('change', () => {
+    const rate = parseFloat(speedSelect.value);
+    video.playbackRate = rate;
+    audio.playbackRate = rate;
+  });
+
+  // 録音開始
+  recBtn.addEventListener('click', () => {
+    if (isRecording) return;
+    
+    // リセット
+    audio.currentTime = 0;
+    video.currentTime = 0;
+    recordedNotes = [];
+    updateOutput();
+    
+    // 再生速度適用
+    const rate = parseFloat(speedSelect.value);
+    video.playbackRate = rate;
+    audio.playbackRate = rate;
+
+    // 再生開始
+    video.play();
+    audio.play();
+
+    isRecording = true;
+    recBtn.textContent = "REC中...";
+    recBtn.classList.add("recording");
+    output.value = "録音中... キーボード(a,i,u,e,o,n)を押してください";
+  });
+
+  // 停止
+  stopBtn.addEventListener('click', () => {
+    video.pause();
+    audio.pause();
+    isRecording = false;
+    recBtn.textContent = "● REC START";
+    recBtn.classList.remove("recording");
+    formatData(); // 最後に整形して出力
+  });
+
+  // クリア
+  clearBtn.addEventListener('click', () => {
+    recordedNotes = [];
+    output.value = "";
+  });
+
+  // キー入力イベント
+  document.addEventListener('keydown', (e) => {
+    if (!isRecording) return;
+    
+    const key = e.key.toLowerCase();
+    if (keyMap[key]) {
+      recordHit(keyMap[key]);
+    }
+  });
+
+  // 打鍵の記録処理
+  function recordHit(char) {
+    // 現在の再生時間
+    const currentTime = audio.currentTime;
+    const bpm = parseFloat(bpmInput.value);
+    
+    // ビート（拍）に変換: 時間(秒) * (BPM / 60)
+    // 0.5倍速で再生していても、currentTimeは「楽曲上の位置」を返すので
+    // 特別な計算をしなくても正しい位置が記録されます！
+    const beat = currentTime * (bpm / 60);
+
+    // データを配列に追加
+    recordedNotes.push({ key: char, beat: beat });
+
+    // 画面に文字を一瞬表示
+    overlay.textContent = char.toUpperCase();
+    overlay.classList.remove("flash");
+    void overlay.offsetWidth; // リフロー
+    overlay.classList.add("flash");
+
+    // 簡易ログ表示
+    output.value = `Hit: ${char} (Time: ${currentTime.toFixed(2)}s, Beat: ${beat.toFixed(2)})\n` + output.value;
+  }
+
+  // データの整形（ゲーム用コードに出力）
+  function formatData() {
+    // Beat順に並べ替え（念のため）
+    recordedNotes.sort((a, b) => a.beat - b.beat);
+
+    let jsonString = "const chartData = [\n";
+    
+    recordedNotes.forEach(note => {
+      // 小数点以下を少し丸める（データ軽量化のため）
+      // グリッドに吸着させたい場合はここを調整しますが、今回は自然な打鍵感を残します
+      const roundedBeat = Math.round(note.beat * 100) / 100; 
+      jsonString += `  { key: "${note.key}", beat: ${roundedBeat} },\n`;
+    });
+
+    jsonString += "];";
+    output.value = jsonString;
+  }
+
+  // クリップボードにコピー
+  window.copyToClipboard = function() {
+    output.select();
+    document.execCommand("copy");
+    alert("コピーしました！kyofu.htmlのchartData部分に貼り付けてください。");
+  };
+
+  // 動画と音声の同期補正（ズレ防止）
+  setInterval(() => {
+    if(!isRecording) return;
+    const diff = Math.abs(video.currentTime - audio.currentTime);
+    if(diff > 0.3) {
+      video.currentTime = audio.currentTime;
+    }
+  }, 1000);
+
+</script>
+</body>
+</html>
