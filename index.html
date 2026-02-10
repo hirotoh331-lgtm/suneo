@@ -35,7 +35,7 @@
   .song-card {
     background: #333;
     width: 300px;
-    height: 180px; /* 少し高さを調整 */
+    height: 180px; 
     border-radius: 15px;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
@@ -57,10 +57,10 @@
   }
 
   .song-title {
-    font-size: 26px; /* 文字を少し大きく */
+    font-size: 26px;
     font-weight: bold;
     z-index: 2;
-    text-shadow: 0 0 10px rgba(0,0,0,0.8); /* 読みやすく影を追加 */
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
   }
 
   /* カードの背景色 */
@@ -73,7 +73,7 @@
   }
   
   .song-card:hover .card-bg {
-    opacity: 0.9; /* ホバー時に少し明るく */
+    opacity: 0.9;
   }
 
   /* 準備中の曲 */
@@ -102,9 +102,10 @@
       <div class="song-title">強風オールバック</div>
     </a>
 
-    <div class="song-card coming-soon">
-      <div class="song-title">Coming Soon...</div>
-    </div>
+    <a href="mezumaraiza.html" class="song-card">
+      <div class="card-bg" style="background: linear-gradient(135deg, #0acffe 0%, #495aff 100%);"></div>
+      <div class="song-title">メズマライザー</div>
+    </a>
 
     <div class="song-card coming-soon">
       <div class="song-title">Coming Soon...</div>

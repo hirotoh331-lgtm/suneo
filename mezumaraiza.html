@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mesmerizer Rhythm Game</title>
+<style>
+  body { 
+    margin: 0; padding: 0;
+    background: #000; color: white; 
+    font-family: 'Arial Black', sans-serif;
+    text-align: center; 
+    overflow: hidden; user-select: none;
+    width: 100vw; height: 100vh;
+    touch-action: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* 背景動画 */
+  #bgVideo {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 100%; min-height: 100%;
+    width: auto; height: auto;
+    z-index: -2;
+    object-fit: cover;
+  }
+
+  #overlay {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
+  }
+
+  /* ゲームエリア */
+  #gameContainer {
+    position: absolute;
+    bottom: 50px; left: 50%;
+    transform: translateX(-50%);
+    width: 90%; max-width: 800px;
+    height: 140px;
+    background: rgba(0, 0, 0, 0.7);
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    z-index: 10;
+    overflow: hidden;
+  }
+
+  /* 判定ライン */
+  #judgeLine {
+    position: absolute; left: 150px; top: 0;
+    width: 6px; height: 100%;
+    background: #00ffff; 
+    box-shadow: 0 0 20px #00ffff;
+    z-index: 5;
+  }
+
+  .hit-flash { animation: flashAnim 0.08s ease-out; }
+  @keyframes flashAnim {
+    0% { background: white; box-shadow: 0 0 50px white; transform: scaleX(2); }
+    100% { background: #00ffff; box-shadow: 0 0 20px #00ffff; transform: scaleX(1); }
+  }
+
+  /* ノーツ */
+  .note {
+    position: absolute; top: 45px; 
+    font-size: 50px; color: white; font-weight: 900;
+    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+  }
+
+  /* パーティクル */
+  .particle {
+    position: absolute; width: 10px; height: 10px;
+    background: gold; border-radius: 50%; pointer-events: none; z-index: 100;
+  }
+
+  /* UIレイヤー */
+  #uiLayer {
+    position: absolute; top: 20px; left: 0; width: 100%;
+    z-index: 20; pointer-events: none;
+  }
+  #scoreBoard { 
+    font-size: 30px; font-weight: 900; 
+    text-shadow: 0 0 15px cyan;
+    transition: transform 0.05s;
+  }
+  .bump { transform: scale(1.2); }
+
+  /* 判定文字 */
+  #feedback {
+    position: absolute; 
+    top: 50%; left: 150px; 
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 50px; font-weight: 900;
+    opacity: 0; text-shadow: 0 0 20px white;
+    pointer-events: none; white-space: nowrap; z-index: 50;
+  }
+  .pop-text { animation: popAnim 0.3s forwards; }
+  @keyframes popAnim {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0); }
+  }
+
+  /* スタートボタン */
+  #startBtn {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 15px 60px; font-size: 24px; 
+    cursor: pointer; z-index: 30;
+    border: none; background: #00ffff; color: #000;
+    font-weight: bold; border-radius: 50px;
+    box-shadow: 0 0 30px #00ffff;
+  }
+  
+  /* スマホ用タップエリア */
+  #tapZone {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9; display: none;
+  }
+</style>
+</head>
+<body>
+
+<video id="bgVideo" src="mezumaraiza.mp4" playsinline muted></video>
+<div id="overlay"></div>
+<audio id="bgm" src="mezumaraiza.mp3"></audio>
+
+<a href="index.html" style="position:absolute; top:10px; left:10px; color:white; text-decoration:none; border:1px solid white; padding:5px 10px; font-size:12px; pointer-events:auto; z-index:999;">← MENU</a>
+
+<div id="uiLayer">
+  <div id="scoreBoard">Score: 0 | Combo: 0</div>
+  <div style="font-size:12px; margin-top:5px; opacity:0.7">PC: Keyboard / Mobile: Tap Anywhere</div>
+</div>
+
+<div id="gameContainer">
+  <div id="judgeLine"></div>
+  <div id="feedback"></div>
+</div>
+
+<button id="startBtn">START</button>
+<div id="tapZone"></div>
+
+<script>
+/* =========================================
+   1. 設定
+   ========================================= */
+const BPM = 205;        // メズマライザーのBPM
+const NOTE_SPEED = 500; 
+const JUDGE_X = 150;    
+const COUNTDOWN_SEC = 3.0; 
+
+function getGameWidth() {
+  return document.getElementById("gameContainer").clientWidth;
+}
+
+// ★★★ 組み込み完了した譜面データ ★★★
+const chartData = [
+  { key: "i", beat: 49.04 },
+  { key: "a", beat: 50.07 },
+  { key: "i", beat: 50.42 },
+  { key: "o", beat: 50.7 },
+  { key: "a", beat: 51.03 },
+  { key: "n", beat: 51.22 },
+  { key: "o", beat: 51.52 },
+  { key: "a", beat: 52.01 },
+  { key: "o", beat: 52.28 },
+  { key: "i", beat: 52.85 },
+  { key: "i", beat: 53.95 },
+  { key: "u", beat: 54.54 },
+  { key: "a", beat: 55.08 },
+  { key: "a", beat: 55.62 },
+  { key: "i", beat: 56.2 },
+  { key: "u", beat: 56.76 },
+  { key: "i", beat: 57.32 },
+  { key: "e", beat: 58.42 },
+  { key: "a", beat: 59.4 },
+  { key: "i", beat: 59.91 },
+  { key: "e", beat: 60.56 },
+  { key: "i", beat: 61.18 },
+  { key: "a", beat: 61.7 },
+  { key: "o", beat: 62.3 },
+  { key: "i", beat: 62.82 },
+  { key: "u", beat: 63.34 },
+  { key: "o", beat: 63.91 },
+  { key: "i", beat: 64.48 },
+  { key: "n", beat: 64.8 },
+  { key: "u", beat: 65.52 },
+  { key: "o", beat: 66.81 },
+  { key: "u", beat: 67.28 },
+  { key: "a", beat: 67.73 },
+  { key: "e", beat: 68.21 },
+  { key: "e", beat: 68.63 },
+  { key: "e", beat: 69.2 },
+  { key: "i", beat: 69.51 },
+  { key: "u", beat: 69.81 },
+  { key: "a", beat: 70.09 },
+  { key: "n", beat: 70.29 },
+  { key: "i", beat: 70.62 },
+  { key: "i", beat: 71.67 },
+  { key: "u", beat: 72.24 },
+  { key: "o", beat: 72.81 },
+  { key: "i", beat: 73.36 },
+  { key: "i", beat: 73.91 },
+  { key: "u", beat: 74.47 },
+  { key: "i", beat: 75 },
+  { key: "o", beat: 76.23 },
+  { key: "o", beat: 76.65 },
+  { key: "u", beat: 77.18 },
+  { key: "a", beat: 77.73 },
+  { key: "e", beat: 78.27 },
+  { key: "u", beat: 78.77 },
+  { key: "u", beat: 79.47 },
+  { key: "u", beat: 80.09 },
+  { key: "a", beat: 81.18 },
+  { key: "i", beat: 82.1 },
+  { key: "o", beat: 82.89 },
+  { key: "n", beat: 83.24 },
+  { key: "a", beat: 83.9 },
+  { key: "a", beat: 84.49 },
+  { key: "a", beat: 84.77 },
+  { key: "a", beat: 84.99 },
+  { key: "i", beat: 85.26 },
+  { key: "o", beat: 85.55 },
+  { key: "u", beat: 85.87 },
+  { key: "u", beat: 86.14 },
+  { key: "e", beat: 86.42 },
+  { key: "a", beat: 86.71 },
+  { key: "i", beat: 86.83 },
+  { key: "o", beat: 87.2 },
+  { key: "u", beat: 87.34 },
+  { key: "u", beat: 87.79 },
+  { key: "u", beat: 87.96 },
+  { key: "o", beat: 88.27 },
+  { key: "o", beat: 88.6 },
+  { key: "o", beat: 88.86 },
+  { key: "i", beat: 89.51 },
+  { key: "o", beat: 89.99 },
+  { key: "o", beat: 90.51 },
+  { key: "a", beat: 91.57 },
+  { key: "a", beat: 92.1 },
+  { key: "e", beat: 92.64 },
+  { key: "a", beat: 93.24 },
+  { key: "n", beat: 93.44 },
+  { key: "i", beat: 93.79 },
+  { key: "a", beat: 94.05 },
+  { key: "a", beat: 94.4 },
+  { key: "a", beat: 94.65 },
+  { key: "i", beat: 94.97 },
+  { key: "u", beat: 95.33 },
+  { key: "a", beat: 95.6 },
+  { key: "e", beat: 95.89 },
+  { key: "a", beat: 96.08 },
+  { key: "o", beat: 96.29 },
+  { key: "o", beat: 96.61 },
+  { key: "a", beat: 96.86 },
+  { key: "a", beat: 97.15 },
+  { key: "u", beat: 97.45 },
+  { key: "u", beat: 97.77 },
+  { key: "a", beat: 98.25 },
+  { key: "e", beat: 98.87 },
+  { key: "u", beat: 99.45 },
+  { key: "o", beat: 100.55 },
+  { key: "a", beat: 101.07 },
+  { key: "a", beat: 101.6 },
+  { key: "o", beat: 102.16 },
+  { key: "u", beat: 102.36 },
+  { key: "i", beat: 102.73 },
+  { key: "o", beat: 102.97 },
+  { key: "a", beat: 103.23 },
+  { key: "a", beat: 103.48 },
+  { key: "e", beat: 103.8 },
+  { key: "a", beat: 104.04 },
+  { key: "a", beat: 104.36 },
+  { key: "e", beat: 104.9 },
+  { key: "i", beat: 105.2 },
+  { key: "e", beat: 105.45 },
+  { key: "a", beat: 105.75 },
+  { key: "i", beat: 105.98 },
+  { key: "o", beat: 106.29 },
+  { key: "o", beat: 106.61 },
+  { key: "a", beat: 107.14 },
+  { key: "a", beat: 107.74 },
+  { key: "a", beat: 108.37 },
+  { key: "a", beat: 109.43 },
+  { key: "e", beat: 109.92 },
+  { key: "e", beat: 110.44 },
+  { key: "o", beat: 111.02 },
+  { key: "i", beat: 111.29 },
+  { key: "a", beat: 111.55 },
+  { key: "u", beat: 111.84 },
+  { key: "a", beat: 112.1 },
+  { key: "o", beat: 112.44 },
+  { key: "e", beat: 112.63 },
+  { key: "i", beat: 113.04 },
+  { key: "o", beat: 113.25 },
+  { key: "a", beat: 113.81 },
+  { key: "a", beat: 114.36 },
+  { key: "e", beat: 114.88 },
+  { key: "u", beat: 116.01 },
+  { key: "o", beat: 116.52 },
+  { key: "a", beat: 116.95 },
+  { key: "a", beat: 117.61 },
+  { key: "i", beat: 118.12 },
+  { key: "e", beat: 118.69 },
+  { key: "i", beat: 119.29 },
+  { key: "a", beat: 119.87 },
+  { key: "i", beat: 120.19 },
+  { key: "o", beat: 121.65 },
+  { key: "o", beat: 122.14 },
+  { key: "a", beat: 122.65 },
+  { key: "e", beat: 123.17 },
+  { key: "a", beat: 123.71 },
+  { key: "a", beat: 124.34 },
+  { key: "a", beat: 125.45 },
+  { key: "a", beat: 126.45 },
+  { key: "a", beat: 127.03 },
+  { key: "a", beat: 127.65 },
+  { key: "a", beat: 128.22 },
+  { key: "o", beat: 128.83 },
+  { key: "o", beat: 130.6 },
+  { key: "o", beat: 130.91 },
+  { key: "o", beat: 131.43 },
+  { key: "o", beat: 132.06 },
+  { key: "u", beat: 132.57 },
+  { key: "a", beat: 133.22 },
+  { key: "e", beat: 133.73 },
+  { key: "a", beat: 134.37 },
+  { key: "o", beat: 135.37 },
+  { key: "n", beat: 135.94 },
+  { key: "o", beat: 136.61 },
+  { key: "o", beat: 137.12 },
+  { key: "a", beat: 137.71 },
+  { key: "u", beat: 139.24 },
+  { key: "e", beat: 139.79 },
+  { key: "e", beat: 140.39 },
+  { key: "a", beat: 140.84 },
+  { key: "o", beat: 141.4 },
+  { key: "a", beat: 142.08 },
+  { key: "e", beat: 143.15 },
+  { key: "i", beat: 143.9 },
+  { key: "u", beat: 144.32 },
+  { key: "o", beat: 144.81 },
+  { key: "u", beat: 145.34 },
+  { key: "a", beat: 145.93 },
+  { key: "i", beat: 146.5 },
+  { key: "o", beat: 147.04 },
+  { key: "u", beat: 147.56 },
+  { key: "i", beat: 148.07 },
+  { key: "o", beat: 148.62 },
+  { key: "o", beat: 149.21 },
+  { key: "o", beat: 149.79 },
+  { key: "a", beat: 150.37 },
+  { key: "i", beat: 150.86 },
+  { key: "a", beat: 153.14 },
+  { key: "a", beat: 154.17 },
+  { key: "a", beat: 154.71 },
+  { key: "o", beat: 155.27 },
+  { key: "n", beat: 155.8 },
+  { key: "a", beat: 156.38 },
+  { key: "i", beat: 156.95 },
+  { key: "a", beat: 157.58 },
+  { key: "i", beat: 158.09 },
+  { key: "i", beat: 158.62 },
+  { key: "a", beat: 159.28 },
+  { key: "u", beat: 159.84 },
+  { key: "a", beat: 160.8 },
+  { key: "e", beat: 161.84 },
+  { key: "a", beat: 162.9 },
+  { key: "i", beat: 163.75 },
+  { key: "e", beat: 164.17 },
+  { key: "u", beat: 164.67 },
+  { key: "e", beat: 165.28 },
+  { key: "o", beat: 165.82 },
+  { key: "i", beat: 166.43 },
+  { key: "a", beat: 167.04 },
+  { key: "u", beat: 167.51 },
+  { key: "e", beat: 168.08 },
+  { key: "i", beat: 169.21 },
+  { key: "e", beat: 169.74 },
+  { key: "i", beat: 170.26 },
+  { key: "e", beat: 170.86 },
+  { key: "o", beat: 171.93 },
+  { key: "n", beat: 172.35 },
+  { key: "o", beat: 173.04 },
+  { key: "u", beat: 173.54 },
+  { key: "o", beat: 174.16 },
+  { key: "i", beat: 174.64 },
+  { key: "a", beat: 175.35 },
+  { key: "i", beat: 175.71 },
+  { key: "e", beat: 176.38 },
+  { key: "a", beat: 176.88 },
+  { key: "a", beat: 177.42 },
+  { key: "a", beat: 178.47 },
+  { key: "e", beat: 179.49 },
+  { key: "u", beat: 180.79 },
+  { key: "a", beat: 181.9 },
+  { key: "a", beat: 182.19 },
+  { key: "a", beat: 182.5 },
+  { key: "o", beat: 183.04 },
+  { key: "u", beat: 183.57 },
+  { key: "u", beat: 184.13 },
+  { key: "a", beat: 184.7 },
+  { key: "i", beat: 185.16 },
+  { key: "i", beat: 185.9 },
+  { key: "n", beat: 186.74 },
+  { key: "o", beat: 187.43 },
+  { key: "u", beat: 187.92 },
+  { key: "o", beat: 188.69 },
+  { key: "o", beat: 189.2 },
+  { key: "o", beat: 189.71 },
+  { key: "o", beat: 190.23 },
+  { key: "a", beat: 190.82 },
+  { key: "n", beat: 191.21 },
+  { key: "i", beat: 191.78 },
+  { key: "a", beat: 192.4 },
+  { key: "o", beat: 192.97 },
+  { key: "u", beat: 193.5 },
+  { key: "i", beat: 194.04 },
+  { key: "a", beat: 194.8 },
+  { key: "i", beat: 195.15 },
+  { key: "a", beat: 196.11 },
+  { key: "e", beat: 197.25 },
+  { key: "i", beat: 197.98 },
+  { key: "u", beat: 198.46 },
+  { key: "u", beat: 199.07 },
+  { key: "i", beat: 199.57 },
+  { key: "e", beat: 200.09 },
+  { key: "u", beat: 200.64 },
+  { key: "a", beat: 201.21 },
+  { key: "i", beat: 201.83 },
+  { key: "u", beat: 202.45 },
+  { key: "u", beat: 202.83 },
+  { key: "e", beat: 203.39 },
+  { key: "i", beat: 204.49 },
+  { key: "e", beat: 204.95 },
+  { key: "i", beat: 205.53 },
+  { key: "e", beat: 206.12 },
+  { key: "e", beat: 207.4 },
+  { key: "o", beat: 207.89 },
+  { key: "a", beat: 208.48 },
+  { key: "e", beat: 208.91 },
+  { key: "o", beat: 209.55 },
+  { key: "i", beat: 210.14 },
+  { key: "o", beat: 210.7 },
+  { key: "u", beat: 211.15 },
+  { key: "o", beat: 211.89 },
+  { key: "a", beat: 212.38 },
+  { key: "a", beat: 212.86 },
+  { key: "i", beat: 213.97 },
+  { key: "u", beat: 215.13 },
+  { key: "u", beat: 216.2 },
+  { key: "i", beat: 216.93 },
+  { key: "i", beat: 217.36 },
+  { key: "u", beat: 217.85 },
+  { key: "o", beat: 218.41 },
+  { key: "e", beat: 218.95 },
+  { key: "e", beat: 219.59 },
+  { key: "i", beat: 220.09 },
+  { key: "a", beat: 221.37 },
+  { key: "i", beat: 221.95 },
+  { key: "a", beat: 222.47 },
+  { key: "e", beat: 222.84 },
+  { key: "a", beat: 223.31 },
+  { key: "a", beat: 223.95 },
+  { key: "u", beat: 224.48 },
+  { key: "e", beat: 225.04 },
+  { key: "e", beat: 225.64 },
+  { key: "e", beat: 226.25 },
+];
+
+/* =========================================
+   2. ゲームエンジン
+   ========================================= */
+const audio = document.getElementById("bgm");
+const video = document.getElementById("bgVideo");
+const container = document.getElementById("gameContainer");
+const judgeLine = document.getElementById("judgeLine");
+const scoreEl = document.getElementById("scoreBoard");
+const feedbackEl = document.getElementById("feedback");
+const startBtn = document.getElementById("startBtn");
+const tapZone = document.getElementById("tapZone");
+
+let isPlaying = false;
+let startTime = 0;
+let score = 0;
+let combo = 0;
+let noteIndex = 0;
+let activeNotes = [];
+let mediaStarted = false;
+let lastCountInt = -1;
+let audioCtx = null;
+
+// スタートボタン
+startBtn.onclick = () => {
+  if (isPlaying) return;
+  // AudioContextの初期化
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  
+  startBtn.style.display = "none";
+  tapZone.style.display = "block";
+  
+  score = 0; combo = 0; noteIndex = 0; activeNotes = [];
+  mediaStarted = false; lastCountInt = Math.ceil(COUNTDOWN_SEC);
+  
+  container.querySelectorAll(".note").forEach(n => n.remove());
+  container.querySelectorAll(".particle").forEach(p => p.remove());
+  updateScore();
+
+  startTime = performance.now() + (COUNTDOWN_SEC * 1000);
+  isPlaying = true;
+  requestAnimationFrame(gameLoop);
+};
+
+function gameLoop() {
+  if (!isPlaying) return;
+  
+  const now = performance.now();
+  const musicTime = (now - startTime) / 1000;
+
+  // カウントダウン処理
+  if (musicTime < 0) {
+    const count = Math.ceil(-musicTime);
+    if (count !== lastCountInt && count > 0) {
+      showFeedback(count, "#ffff00");
+      playSystemSound("beep");
+      lastCountInt = count;
+    }
+  } else {
+    // 楽曲・動画スタート
+    if (!mediaStarted) {
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log("Audio play failed", e));
+      video.currentTime = 0;
+      video.play().catch(e => console.log("Video play failed", e)); 
+      mediaStarted = true;
+      showFeedback("GO!", "#00ffff");
+      playSystemSound("start");
+    }
+    // 同期補正
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      video.currentTime = audio.currentTime;
+    }
+  }
+
+  // ノーツ生成
+  while (noteIndex < chartData.length) {
+    const data = chartData[noteIndex];
+    const targetTime = data.beat * (60 / BPM);
+    const currentWidth = getGameWidth();
+    const travelTime = (currentWidth - JUDGE_X) / NOTE_SPEED;
+    const spawnTime = targetTime - travelTime;
+
+    if (musicTime >= spawnTime) {
+      spawnNote(data, targetTime);
+      noteIndex++;
+    } else {
+      break;
+    }
+  }
+
+  // ノーツ移動と判定
+  activeNotes.forEach((noteObj, index) => {
+    const timeRemaining = noteObj.time - musicTime;
+    const x = JUDGE_X + (timeRemaining * NOTE_SPEED);
+    noteObj.el.style.left = x + "px";
+
+    if (x < -100) { 
+      showFeedback("Miss...", "#555");
+      combo = 0;
+      updateScore();
+      noteObj.el.remove();
+      activeNotes.splice(index, 1);
+    }
+  });
+
+  // 終了処理
+  if (mediaStarted && audio.ended) {
+    endGame();
+  } else {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function endGame() {
+    isPlaying = false;
+    startBtn.style.display = "block";
+    startBtn.textContent = "REPLAY";
+    tapZone.style.display = "none";
+    video.pause();
+    alert(`Game Clear! Score: ${score}`);
+}
+
+function spawnNote(data, targetTime) {
+  const el = document.createElement("div");
+  el.className = "note";
+  el.textContent = data.key.toUpperCase();
+  container.appendChild(el);
+  activeNotes.push({ el: el, key: data.key, time: targetTime, hit: false });
+}
+
+/* =========================================
+   3. 入力判定
+   ========================================= */
+// キーボード
+document.addEventListener("keydown", e => {
+  if (!isPlaying) return;
+  const key = e.key.toLowerCase();
+  if (["a","i","u","e","o","n"].includes(key)) {
+    processInput(key);
+  } else {
+    triggerLineFlash();
+  }
+});
+
+// スマホタップ
+tapZone.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (!isPlaying) return;
+    processInput("auto");
+}, {passive: false});
+
+function processInput(key) {
+  triggerLineFlash();
+  const now = (performance.now() - startTime) / 1000;
+  
+  let targetNote;
+  if (key === "auto") {
+      targetNote = activeNotes.find(n => !n.hit && Math.abs(n.time - now) < 0.3);
+  } else {
+      targetNote = activeNotes.find(n => !n.hit && n.key === key && Math.abs(n.time - now) < 0.3);
+  }
+
+  if (targetNote) {
+    const diff = Math.abs(targetNote.time - now);
+    if (diff < 0.1) { 
+      judge(targetNote, "PERFECT!!", "#ff00ff", 100, true);
+    } else if (diff < 0.25) {
+      judge(targetNote, "Great!", "#00ff00", 50, false);
+    } else {
+      judge(targetNote, "Good", "#ffff00", 20, false);
+    }
+  }
+}
+
+function judge(noteObj, text, color, point, isPerfect) {
+  noteObj.hit = true;
+  noteObj.el.remove();
+  const idx = activeNotes.indexOf(noteObj);
+  if (idx > -1) activeNotes.splice(idx, 1);
+  
+  score += point;
+  combo++;
+  updateScore();
+  showFeedback(text, color);
+  createParticles(color);
+  
+  if (isPerfect) playSystemSound("perfect");
+  else playSystemSound("hit");
+}
+
+function triggerLineFlash() {
+  judgeLine.classList.remove("hit-flash");
+  void judgeLine.offsetWidth; 
+  judgeLine.classList.add("hit-flash");
+}
+
+function updateScore() {
+  scoreEl.innerHTML = `Score: ${score} <span style="font-size:0.6em; color:#888;">|</span> Combo: <span style="color:cyan">${combo}</span>`;
+  scoreEl.classList.remove("bump");
+  void scoreEl.offsetWidth;
+  scoreEl.classList.add("bump");
+  setTimeout(() => scoreEl.classList.remove("bump"), 50);
+}
+
+function showFeedback(text, color) {
+  feedbackEl.textContent = text;
+  feedbackEl.style.color = color;
+  feedbackEl.classList.remove("pop-text");
+  void feedbackEl.offsetWidth; 
+  feedbackEl.classList.add("pop-text");
+}
+
+function createParticles(color) {
+  const particleCount = 12;
+  for (let i = 0; i < particleCount; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    p.style.backgroundColor = color;
+    p.style.left = JUDGE_X + "px";
+    p.style.top = "70px";
+    
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = Math.random() * 80 + 40;
+    const tx = Math.cos(angle) * velocity;
+    const ty = Math.sin(angle) * velocity;
+    
+    p.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+    container.appendChild(p);
+
+    requestAnimationFrame(() => {
+      p.style.transform = `translate(${tx}px, ${ty}px) scale(0)`;
+      p.style.opacity = 0;
+    });
+    setTimeout(() => p.remove(), 400);
+  }
+}
+
+/* =========================================
+   4. サウンド生成
+   ========================================= */
+function playSystemSound(type) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+
+  if (type === "perfect") {
+    osc.type = "sine"; 
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.15);
+    gain.gain.setValueAtTime(0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (type === "hit") {
+    osc.type = "square";
+    osc.frequency.setValueAtTime(800, now);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "beep") {
+    osc.type = "square";
+    osc.frequency.value = 800;
+    gain.gain.setValueAtTime(0.1, now);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "start") {
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.linearRampToValueAtTime(1200, now + 0.5);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.5);
+  }
+}
+</script>
+</body>
+</html>
