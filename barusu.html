@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Barusu Rhythm Game</title>
+<style>
+  body { 
+    margin: 0; padding: 0;
+    background: #000; color: white; 
+    font-family: 'Arial Black', sans-serif;
+    text-align: center; 
+    overflow: hidden; user-select: none;
+    width: 100vw; height: 100vh;
+    touch-action: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* 背景動画の修正版 */
+  #bgVideo {
+    position: absolute;
+    top: 0; 
+    left: 0;
+    width: 100%; 
+    height: 100%;
+    
+    /* 回転を削除し、画面いっぱいに表示する設定に変更 */
+    object-fit: cover; 
+    
+    z-index: -2;
+  }
+
+  #overlay {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
+  }
+
+  /* ゲームエリア */
+  #gameContainer {
+    position: absolute;
+    bottom: 50px; left: 50%;
+    transform: translateX(-50%);
+    width: 90%; max-width: 800px;
+    height: 140px;
+    background: rgba(0, 0, 0, 0.7);
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    z-index: 10;
+    overflow: hidden;
+  }
+
+  /* 判定ライン */
+  #judgeLine {
+    position: absolute; left: 150px; top: 0;
+    width: 6px; height: 100%;
+    background: #00ffff; 
+    box-shadow: 0 0 20px #00ffff;
+    z-index: 5;
+  }
+
+  .hit-flash { animation: flashAnim 0.08s ease-out; }
+  @keyframes flashAnim {
+    0% { background: white; box-shadow: 0 0 50px white; transform: scaleX(2); }
+    100% { background: #00ffff; box-shadow: 0 0 20px #00ffff; transform: scaleX(1); }
+  }
+
+  /* ノーツ */
+  .note {
+    position: absolute; top: 45px; 
+    font-size: 50px; color: white; font-weight: 900;
+    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+  }
+
+  /* パーティクル */
+  .particle {
+    position: absolute; width: 10px; height: 10px;
+    background: gold; border-radius: 50%; pointer-events: none; z-index: 100;
+  }
+
+  /* UIレイヤー */
+  #uiLayer {
+    position: absolute; top: 20px; left: 0; width: 100%;
+    z-index: 20; pointer-events: none;
+  }
+  #scoreBoard { 
+    font-size: 30px; font-weight: 900; 
+    text-shadow: 0 0 15px cyan;
+    transition: transform 0.05s;
+  }
+  .bump { transform: scale(1.2); }
+
+  /* 判定文字 */
+  #feedback {
+    position: absolute; 
+    top: 50%; left: 150px; 
+    transform: translate(-50%, -50%) scale(0.5);
+    font-size: 50px; font-weight: 900;
+    opacity: 0; text-shadow: 0 0 20px white;
+    pointer-events: none; white-space: nowrap; z-index: 50;
+  }
+  .pop-text { animation: popAnim 0.3s forwards; }
+  @keyframes popAnim {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0); }
+  }
+
+  /* スタートボタン */
+  #startBtn {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 15px 60px; font-size: 24px; 
+    cursor: pointer; z-index: 30;
+    border: none; background: #00ffff; color: #000;
+    font-weight: bold; border-radius: 50px;
+    box-shadow: 0 0 30px #00ffff;
+  }
+  
+  /* スマホ用タップエリア */
+  #tapZone {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9; display: none;
+  }
+</style>
+</head>
+<body>
+
+<video id="bgVideo" src="barusu.mp4" playsinline muted></video>
+<div id="overlay"></div>
+<audio id="bgm" src="barusu.mp3"></audio>
+
+<a href="index.html" style="position:absolute; top:10px; left:10px; color:white; text-decoration:none; border:1px solid white; padding:5px 10px; font-size:12px; pointer-events:auto; z-index:999;">← MENU</a>
+
+<div id="uiLayer">
+  <div id="scoreBoard">Score: 0 | Combo: 0</div>
+  <div style="font-size:12px; margin-top:5px; opacity:0.7">PC: Keyboard / Mobile: Tap Anywhere</div>
+</div>
+
+<div id="gameContainer">
+  <div id="judgeLine"></div>
+  <div id="feedback"></div>
+</div>
+
+<button id="startBtn">START</button>
+<div id="tapZone"></div>
+
+<script>
+/* =========================================
+   1. 設定
+   ========================================= */
+const BPM = 60;
+const NOTE_SPEED = 500; 
+const JUDGE_X = 150;    
+const COUNTDOWN_SEC = 3.0; 
+
+function getGameWidth() {
+  return document.getElementById("gameContainer").clientWidth;
+}
+
+// 譜面データ (Barusu)
+const chartData = [
+  { key: "a", beat: 16.36 },
+  { key: "o", beat: 16.54 },
+  { key: "i", beat: 16.77 },
+  { key: "e", beat: 17.63 },
+  { key: "i", beat: 17.88 },
+  { key: "e", beat: 18.36 },
+  { key: "n", beat: 18.83 },
+  { key: "a", beat: 20.36 },
+  { key: "a", beat: 20.9 },
+  { key: "a", beat: 21.56 },
+  { key: "u", beat: 21.86 },
+  { key: "o", beat: 22.36 },
+  { key: "a", beat: 22.91 },
+  { key: "o", beat: 24.43 },
+  { key: "o", beat: 24.71 },
+  { key: "a", beat: 24.91 },
+  { key: "i", beat: 25.73 },
+  { key: "i", beat: 25.97 },
+  { key: "i", beat: 26.22 },
+  { key: "o", beat: 26.97 },
+  { key: "a", beat: 28.26 },
+  { key: "u", beat: 28.49 },
+  { key: "i", beat: 28.77 },
+  { key: "e", beat: 29.04 },
+  { key: "i", beat: 29.73 },
+  { key: "u", beat: 30.06 },
+  { key: "a", beat: 30.51 },
+  { key: "a", beat: 31.03 },
+  { key: "a", beat: 32.57 },
+  { key: "u", beat: 32.84 },
+  { key: "a", beat: 33.09 },
+  { key: "n", beat: 33.82 },
+  { key: "o", beat: 34.13 },
+  { key: "i", beat: 34.57 },
+  { key: "a", beat: 35.11 },
+  { key: "a", beat: 36.59 },
+  { key: "u", beat: 36.85 },
+  { key: "a", beat: 37.13 },
+  { key: "i", beat: 37.88 },
+  { key: "i", beat: 38.11 },
+  { key: "o", beat: 38.61 },
+  { key: "a", beat: 39.17 },
+  { key: "a", beat: 41.02 },
+  { key: "o", beat: 41.26 },
+  { key: "o", beat: 41.64 },
+  { key: "e", beat: 41.98 },
+  { key: "a", beat: 42.67 },
+  { key: "i", beat: 43.26 },
+  { key: "o", beat: 43.58 },
+  { key: "u", beat: 44.04 },
+  { key: "i", beat: 44.3 },
+  { key: "i", beat: 45.26 },
+  { key: "i", beat: 45.55 },
+  { key: "a", beat: 45.81 },
+  { key: "i", beat: 46.02 },
+  { key: "u", beat: 46.34 },
+  { key: "a", beat: 46.83 },
+  { key: "a", beat: 47.35 },
+  { key: "a", beat: 48.89 },
+  { key: "a", beat: 49.14 },
+  { key: "e", beat: 49.38 },
+  { key: "a", beat: 50.08 },
+  { key: "e", beat: 50.37 },
+  { key: "o", beat: 50.9 },
+  { key: "u", beat: 51.39 },
+  { key: "i", beat: 52.92 },
+  { key: "o", beat: 53.19 },
+  { key: "i", beat: 53.42 },
+  { key: "e", beat: 54.19 },
+  { key: "o", beat: 54.45 },
+  { key: "a", beat: 54.88 },
+  { key: "n", beat: 55.49 },
+  { key: "a", beat: 57.45 },
+  { key: "i", beat: 57.74 },
+  { key: "u", beat: 58.01 },
+  { key: "a", beat: 58.45 },
+  { key: "n", beat: 58.75 },
+  { key: "u", beat: 59.02 },
+  { key: "a", beat: 59.24 },
+  { key: "a", beat: 59.52 },
+  { key: "n", beat: 60.24 },
+  { key: "i", beat: 60.55 },
+  { key: "u", beat: 61.57 },
+  { key: "e", beat: 62.07 },
+  { key: "o", beat: 62.59 },
+  { key: "n", beat: 63.14 },
+  { key: "e", beat: 63.62 },
+  { key: "o", beat: 67.16 },
+  { key: "u", beat: 67.38 },
+  { key: "a", beat: 67.66 },
+  { key: "n", beat: 68.44 },
+  { key: "a", beat: 68.7 },
+  { key: "o", beat: 69.4 },
+  { key: "o", beat: 69.63 },
+  { key: "i", beat: 69.94 },
+  { key: "a", beat: 70.24 },
+  { key: "a", beat: 71.53 },
+  { key: "u", beat: 71.76 },
+  { key: "i", beat: 72.21 },
+  { key: "o", beat: 72.5 },
+  { key: "o", beat: 73.02 },
+  { key: "i", beat: 73.71 },
+  { key: "a", beat: 75.21 },
+  { key: "a", beat: 75.5 },
+  { key: "a", beat: 75.75 },
+  { key: "n", beat: 76.57 },
+  { key: "a", beat: 76.83 },
+  { key: "u", beat: 77.82 },
+  { key: "e", beat: 78.07 },
+  { key: "a", beat: 78.33 },
+  { key: "a", beat: 79.64 },
+  { key: "o", beat: 79.89 },
+  { key: "a", beat: 80.36 },
+  { key: "a", beat: 80.61 },
+  { key: "a", beat: 81.43 },
+  { key: "i", beat: 81.99 },
+  { key: "i", beat: 83.39 },
+  { key: "u", beat: 83.73 },
+  { key: "u", beat: 83.97 },
+  { key: "a", beat: 84.72 },
+  { key: "a", beat: 84.96 },
+  { key: "a", beat: 85.52 },
+  { key: "u", beat: 86 },
+  { key: "i", beat: 87.52 },
+  { key: "i", beat: 87.74 },
+  { key: "o", beat: 88.01 },
+  { key: "a", beat: 88.76 },
+  { key: "u", beat: 89.02 },
+  { key: "i", beat: 89.5 },
+  { key: "e", beat: 90.02 },
+  { key: "a", beat: 91.56 },
+  { key: "a", beat: 91.8 },
+  { key: "a", beat: 92.07 },
+  { key: "u", beat: 92.81 },
+  { key: "i", beat: 93.08 },
+  { key: "o", beat: 93.37 },
+  { key: "i", beat: 94.16 },
+  { key: "i", beat: 95.41 },
+  { key: "a", beat: 95.58 },
+  { key: "e", beat: 95.85 },
+  { key: "u", beat: 96.13 },
+  { key: "o", beat: 96.82 },
+  { key: "o", beat: 97.14 },
+  { key: "i", beat: 97.64 },
+  { key: "i", beat: 98.15 },
+  { key: "i", beat: 99.7 },
+  { key: "u", beat: 99.94 },
+  { key: "u", beat: 100.18 },
+  { key: "a", beat: 100.98 },
+  { key: "a", beat: 101.21 },
+  { key: "a", beat: 101.74 },
+  { key: "u", beat: 102.26 },
+  { key: "i", beat: 103.77 },
+  { key: "i", beat: 104.3 },
+  { key: "o", beat: 105.06 },
+  { key: "o", beat: 105.3 },
+  { key: "e", beat: 105.8 },
+  { key: "e", beat: 106.29 },
+  { key: "i", beat: 108.09 },
+  { key: "u", beat: 108.37 },
+  { key: "a", beat: 108.77 },
+  { key: "i", beat: 109.1 },
+  { key: "o", beat: 109.81 },
+  { key: "e", beat: 110.36 },
+  { key: "a", beat: 110.72 },
+  { key: "u", beat: 111.14 },
+  { key: "o", beat: 112.35 },
+  { key: "u", beat: 112.63 },
+  { key: "a", beat: 112.84 },
+  { key: "o", beat: 113.12 },
+  { key: "o", beat: 113.39 },
+  { key: "e", beat: 113.89 },
+  { key: "e", beat: 114.43 },
+  { key: "o", beat: 132.33 },
+  { key: "u", beat: 132.52 },
+  { key: "a", beat: 132.79 },
+  { key: "n", beat: 133.51 },
+  { key: "a", beat: 133.77 },
+  { key: "o", beat: 134.61 },
+  { key: "o", beat: 134.83 },
+  { key: "i", beat: 135.08 },
+  { key: "a", beat: 135.34 },
+  { key: "a", beat: 136.61 },
+  { key: "u", beat: 136.85 },
+  { key: "i", beat: 137.31 },
+  { key: "o", beat: 137.61 },
+  { key: "o", beat: 138.12 },
+  { key: "i", beat: 138.84 },
+  { key: "a", beat: 140.33 },
+  { key: "a", beat: 140.58 },
+  { key: "a", beat: 140.84 },
+  { key: "n", beat: 141.67 },
+  { key: "a", beat: 141.92 },
+  { key: "u", beat: 142.86 },
+  { key: "e", beat: 143.17 },
+  { key: "a", beat: 143.39 },
+  { key: "a", beat: 144.71 },
+  { key: "o", beat: 144.96 },
+  { key: "a", beat: 145.43 },
+  { key: "a", beat: 145.72 },
+  { key: "a", beat: 146.42 },
+  { key: "i", beat: 147.05 },
+  { key: "i", beat: 148.49 },
+  { key: "u", beat: 148.76 },
+  { key: "u", beat: 149 },
+  { key: "a", beat: 149.79 },
+  { key: "a", beat: 150.02 },
+  { key: "a", beat: 150.56 },
+  { key: "u", beat: 151.1 },
+  { key: "i", beat: 152.66 },
+  { key: "i", beat: 152.87 },
+  { key: "o", beat: 153.12 },
+  { key: "a", beat: 153.87 },
+  { key: "u", beat: 154.12 },
+  { key: "i", beat: 154.59 },
+  { key: "e", beat: 155.06 },
+  { key: "a", beat: 156.64 },
+  { key: "a", beat: 156.88 },
+  { key: "a", beat: 157.14 },
+  { key: "u", beat: 157.87 },
+  { key: "i", beat: 158.16 },
+  { key: "o", beat: 158.44 },
+  { key: "i", beat: 159.2 },
+  { key: "i", beat: 160.45 },
+  { key: "a", beat: 160.67 },
+  { key: "e", beat: 160.94 },
+  { key: "u", beat: 161.21 },
+  { key: "o", beat: 161.96 },
+  { key: "o", beat: 162.25 },
+  { key: "i", beat: 162.78 },
+  { key: "i", beat: 163.27 },
+  { key: "i", beat: 164.78 },
+  { key: "u", beat: 165.04 },
+  { key: "u", beat: 165.28 },
+  { key: "a", beat: 166 },
+  { key: "a", beat: 166.27 },
+  { key: "a", beat: 166.77 },
+  { key: "u", beat: 167.33 },
+  { key: "i", beat: 168.84 },
+  { key: "i", beat: 169.37 },
+  { key: "o", beat: 170.13 },
+  { key: "o", beat: 170.37 },
+  { key: "e", beat: 170.9 },
+  { key: "e", beat: 171.35 },
+  { key: "i", beat: 173.12 },
+  { key: "u", beat: 173.45 },
+  { key: "a", beat: 173.88 },
+  { key: "i", beat: 174.17 },
+  { key: "o", beat: 174.91 },
+  { key: "e", beat: 175.46 },
+  { key: "a", beat: 175.81 },
+  { key: "u", beat: 176.3 },
+  { key: "o", beat: 177.41 },
+  { key: "u", beat: 177.71 },
+  { key: "a", beat: 177.94 },
+  { key: "o", beat: 178.19 },
+  { key: "o", beat: 178.46 },
+  { key: "e", beat: 179.02 },
+  { key: "e", beat: 179.54 },
+];
+
+/* =========================================
+   2. ゲームエンジン
+   ========================================= */
+const audio = document.getElementById("bgm");
+const video = document.getElementById("bgVideo");
+const container = document.getElementById("gameContainer");
+const judgeLine = document.getElementById("judgeLine");
+const scoreEl = document.getElementById("scoreBoard");
+const feedbackEl = document.getElementById("feedback");
+const startBtn = document.getElementById("startBtn");
+const tapZone = document.getElementById("tapZone");
+
+let isPlaying = false;
+let startTime = 0;
+let score = 0;
+let combo = 0;
+let noteIndex = 0;
+let activeNotes = [];
+let mediaStarted = false;
+let lastCountInt = -1;
+let audioCtx = null;
+
+// スタートボタン
+startBtn.onclick = () => {
+  if (isPlaying) return;
+  // AudioContextの初期化
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  
+  startBtn.style.display = "none";
+  tapZone.style.display = "block";
+  
+  score = 0; combo = 0; noteIndex = 0; activeNotes = [];
+  mediaStarted = false; lastCountInt = Math.ceil(COUNTDOWN_SEC);
+  
+  container.querySelectorAll(".note").forEach(n => n.remove());
+  container.querySelectorAll(".particle").forEach(p => p.remove());
+  updateScore();
+
+  startTime = performance.now() + (COUNTDOWN_SEC * 1000);
+  isPlaying = true;
+  requestAnimationFrame(gameLoop);
+};
+
+function gameLoop() {
+  if (!isPlaying) return;
+  
+  const now = performance.now();
+  const musicTime = (now - startTime) / 1000;
+
+  // カウントダウン処理
+  if (musicTime < 0) {
+    const count = Math.ceil(-musicTime);
+    if (count !== lastCountInt && count > 0) {
+      showFeedback(count, "#ffff00");
+      playSystemSound("beep");
+      lastCountInt = count;
+    }
+  } else {
+    // 楽曲・動画スタート
+    if (!mediaStarted) {
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log("Audio play failed", e));
+      video.currentTime = 0;
+      video.play().catch(e => console.log("Video play failed", e)); 
+      mediaStarted = true;
+      showFeedback("GO!", "#00ffff");
+      playSystemSound("start");
+    }
+    // 同期補正
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      video.currentTime = audio.currentTime;
+    }
+  }
+
+  // ノーツ生成
+  while (noteIndex < chartData.length) {
+    const data = chartData[noteIndex];
+    // BPM60なので data.beat がそのまま秒数として機能します
+    const targetTime = data.beat * (60 / BPM); 
+    const currentWidth = getGameWidth();
+    const travelTime = (currentWidth - JUDGE_X) / NOTE_SPEED;
+    const spawnTime = targetTime - travelTime;
+
+    if (musicTime >= spawnTime) {
+      spawnNote(data, targetTime);
+      noteIndex++;
+    } else {
+      break;
+    }
+  }
+
+  // ノーツ移動と判定
+  activeNotes.forEach((noteObj, index) => {
+    const timeRemaining = noteObj.time - musicTime;
+    const x = JUDGE_X + (timeRemaining * NOTE_SPEED);
+    noteObj.el.style.left = x + "px";
+
+    if (x < -100) { 
+      showFeedback("Miss...", "#555");
+      combo = 0;
+      updateScore();
+      noteObj.el.remove();
+      activeNotes.splice(index, 1);
+    }
+  });
+
+  // 終了処理
+  if (mediaStarted && audio.ended) {
+    endGame();
+  } else {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function endGame() {
+    isPlaying = false;
+    startBtn.style.display = "block";
+    startBtn.textContent = "REPLAY";
+    tapZone.style.display = "none";
+    video.pause();
+    alert(`Game Clear! Score: ${score}`);
+}
+
+function spawnNote(data, targetTime) {
+  const el = document.createElement("div");
+  el.className = "note";
+  el.textContent = data.key.toUpperCase();
+  container.appendChild(el);
+  activeNotes.push({ el: el, key: data.key, time: targetTime, hit: false });
+}
+
+/* =========================================
+   3. 入力判定
+   ========================================= */
+// キーボード
+document.addEventListener("keydown", e => {
+  if (!isPlaying) return;
+  const key = e.key.toLowerCase();
+  if (["a","i","u","e","o","n"].includes(key)) {
+    processInput(key);
+  } else {
+    triggerLineFlash();
+  }
+});
+
+// スマホタップ
+tapZone.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (!isPlaying) return;
+    processInput("auto");
+}, {passive: false});
+
+function processInput(key) {
+  triggerLineFlash();
+  const now = (performance.now() - startTime) / 1000;
+  
+  let targetNote;
+  if (key === "auto") {
+      targetNote = activeNotes.find(n => !n.hit && Math.abs(n.time - now) < 0.3);
+  } else {
+      targetNote = activeNotes.find(n => !n.hit && n.key === key && Math.abs(n.time - now) < 0.3);
+  }
+
+  if (targetNote) {
+    const diff = Math.abs(targetNote.time - now);
+    if (diff < 0.1) { 
+      judge(targetNote, "PERFECT!!", "#ff00ff", 100, true);
+    } else if (diff < 0.25) {
+      judge(targetNote, "Great!", "#00ff00", 50, false);
+    } else {
+      judge(targetNote, "Good", "#ffff00", 20, false);
+    }
+  }
+}
+
+function judge(noteObj, text, color, point, isPerfect) {
+  noteObj.hit = true;
+  noteObj.el.remove();
+  const idx = activeNotes.indexOf(noteObj);
+  if (idx > -1) activeNotes.splice(idx, 1);
+  
+  score += point;
+  combo++;
+  updateScore();
+  showFeedback(text, color);
+  createParticles(color);
+  
+  if (isPerfect) playSystemSound("perfect");
+  else playSystemSound("hit");
+}
+
+function triggerLineFlash() {
+  judgeLine.classList.remove("hit-flash");
+  void judgeLine.offsetWidth; 
+  judgeLine.classList.add("hit-flash");
+}
+
+function updateScore() {
+  scoreEl.innerHTML = `Score: ${score} <span style="font-size:0.6em; color:#888;">|</span> Combo: <span style="color:cyan">${combo}</span>`;
+  scoreEl.classList.remove("bump");
+  void scoreEl.offsetWidth;
+  scoreEl.classList.add("bump");
+  setTimeout(() => scoreEl.classList.remove("bump"), 50);
+}
+
+function showFeedback(text, color) {
+  feedbackEl.textContent = text;
+  feedbackEl.style.color = color;
+  feedbackEl.classList.remove("pop-text");
+  void feedbackEl.offsetWidth; 
+  feedbackEl.classList.add("pop-text");
+}
+
+function createParticles(color) {
+  const particleCount = 12;
+  for (let i = 0; i < particleCount; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    p.style.backgroundColor = color;
+    p.style.left = JUDGE_X + "px";
+    p.style.top = "70px";
+    
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = Math.random() * 80 + 40;
+    const tx = Math.cos(angle) * velocity;
+    const ty = Math.sin(angle) * velocity;
+    
+    p.style.transition = "transform 0.4s ease-out, opacity 0.4s ease-out";
+    container.appendChild(p);
+
+    requestAnimationFrame(() => {
+      p.style.transform = `translate(${tx}px, ${ty}px) scale(0)`;
+      p.style.opacity = 0;
+    });
+    setTimeout(() => p.remove(), 400);
+  }
+}
+
+/* =========================================
+   4. サウンド生成
+   ========================================= */
+function playSystemSound(type) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+
+  if (type === "perfect") {
+    osc.type = "sine"; 
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.15);
+    gain.gain.setValueAtTime(0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (type === "hit") {
+    osc.type = "square";
+    osc.frequency.setValueAtTime(800, now);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "beep") {
+    osc.type = "square";
+    osc.frequency.value = 800;
+    gain.gain.setValueAtTime(0.1, now);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === "start") {
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.linearRampToValueAtTime(1200, now + 0.5);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.linearRampToValueAtTime(0, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.5);
+  }
+}
+</script>
+</body>
+</html>
