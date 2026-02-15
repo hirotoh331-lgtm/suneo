@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>母音リズムゲーム (Visual Offset / Hide UI)</title>
+<title>Sakana Rhythm Game (Visual Offset)</title>
 <style>
   body { 
     margin: 0; padding: 0;
-    background: #000; color: white; 
+    background: #001f3f; color: white; 
     font-family: 'Arial Black', sans-serif;
     text-align: center; 
     overflow: hidden; user-select: none;
@@ -18,19 +18,15 @@
 
   /* 背景動画 */
   #bgVideo {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 100%; min-height: 100%;
-    width: auto; height: auto;
-    z-index: -2;
-    object-fit: cover;
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover; z-index: -2;
   }
 
   #overlay {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 20, 40, 0.6);
     z-index: -1;
   }
 
@@ -41,10 +37,10 @@
     transform: translateX(-50%);
     width: 90%; max-width: 800px;
     height: 140px;
-    background: rgba(0, 0, 0, 0.7);
-    border-top: 2px solid rgba(255, 255, 255, 0.8);
-    border-bottom: 2px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+    background: rgba(0, 30, 60, 0.8);
+    border-top: 2px solid rgba(0, 255, 255, 0.8);
+    border-bottom: 2px solid rgba(0, 255, 255, 0.8);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
     z-index: 10;
     overflow: hidden;
   }
@@ -68,14 +64,14 @@
   .note {
     position: absolute; top: 45px; 
     font-size: 50px; color: white; font-weight: 900;
-    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+    text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
     will-change: left;
   }
 
   /* パーティクル */
   .particle {
     position: absolute; width: 10px; height: 10px;
-    background: gold; border-radius: 50%; pointer-events: none; z-index: 100;
+    background: #7FDBFF; border-radius: 50%; pointer-events: none; z-index: 100;
   }
 
   /* UIレイヤー */
@@ -85,7 +81,7 @@
   }
   #scoreBoard { 
     font-size: 30px; font-weight: 900; 
-    text-shadow: 0 0 15px cyan;
+    text-shadow: 0 0 15px #00ffff;
     transition: transform 0.05s;
   }
   .bump { transform: scale(1.2); }
@@ -95,16 +91,15 @@
     pointer-events: auto;
     margin-top: 10px;
     font-size: 14px;
-    background: rgba(0,0,0,0.8);
+    background: rgba(0, 30, 60, 0.9);
     display: inline-block;
     padding: 8px 20px;
     border-radius: 20px;
     border: 1px solid #00ffff;
     color: white;
-    transition: opacity 0.3s;
   }
   #offsetControl button {
-    background: #00ffff; color: #000; border: none;
+    background: #00ffff; color: #001f3f; border: none;
     width: 30px; height: 30px; border-radius: 50%;
     font-weight: bold; cursor: pointer;
     margin: 0 10px;
@@ -139,7 +134,7 @@
     transform: translate(-50%, -50%);
     padding: 15px 60px; font-size: 24px; 
     cursor: pointer; z-index: 30;
-    border: none; background: #00ffff; color: #000;
+    border: none; background: #00ffff; color: #001f3f;
     font-weight: bold; border-radius: 50px;
     box-shadow: 0 0 30px #00ffff;
   }
@@ -152,17 +147,17 @@
 </head>
 <body>
 
-<video id="bgVideo" src="kyofu.mp4" playsinline muted></video>
+<video id="bgVideo" src="sakana.mp4" playsinline muted></video>
 <div id="overlay"></div>
-<audio id="bgm" src="kyofu.mp3"></audio>
+<audio id="bgm" src="sakana.mp3"></audio>
 
 <a href="index.html" style="position:absolute; top:10px; left:10px; color:white; text-decoration:none; border:1px solid white; padding:5px 10px; font-size:12px; pointer-events:auto; z-index:999;">← MENU</a>
 
 <div id="uiLayer">
-  <div id="scoreBoard">Score: 0 | Combo: 0</div>
+  <div id="scoreBoard">Score: 0.00% | Combo: 0</div>
   
   <div id="offsetControl">
-    <div style="margin-bottom:5px; font-size:12px; color:#ccc;">ノーツ位置調整 (Visual Offset)</div>
+    <div style="margin-bottom:5px; font-size:12px; color:#7FDBFF;">ノーツ位置調整 (Visual Offset)</div>
     <button onclick="changeOffset(-0.05)">◀</button> 
     <span id="offsetVal">0.00</span>s 
     <button onclick="changeOffset(0.05)">▶</button>
@@ -184,8 +179,8 @@
 /* =========================================
    1. 設定
    ========================================= */
-const BPM = 135;        
-const NOTE_SPEED = 500; // pixels per second
+const BPM = 60;
+const NOTE_SPEED = 500; 
 const JUDGE_X = 150;    
 const COUNTDOWN_SEC = 3.0; 
 
@@ -193,58 +188,196 @@ function getGameWidth() {
   return document.getElementById("gameContainer").clientWidth;
 }
 
-// 譜面データ (強風オールバック)
+// 譜面データ (Sakana)
 const chartData = [
-  { key: "o", beat: 0.0 },
-  { key: "o", beat: 0.85 },
-  { key: "e", beat: 1.16 },
-  { key: "a", beat: 1.86 },
-  { key: "u", beat: 2.15 },
-  { key: "n", beat: 2.62 },
-  { key: "a", beat: 3.1 },
-  { key: "n", beat: 3.54 },
-  { key: "o", beat: 4.05 },
-  { key: "a", beat: 4.59 },
-  { key: "a", beat: 5.48 },
-  { key: "a", beat: 6.05 },
-  { key: "e", beat: 8.04 },
-  { key: "n", beat: 8.44 },
-  { key: "i", beat: 9.05 },
-  { key: "a", beat: 9.59 },
-  { key: "i", beat: 10.06 },
-  { key: "i", beat: 10.54 },
-  { key: "o", beat: 11.1 },
-  { key: "i", beat: 11.64 },
-  { key: "u", beat: 12.17 },
-  { key: "u", beat: 12.64 },
-  { key: "e", beat: 13.11 },
-  { key: "a", beat: 13.63 },
-  { key: "i", beat: 14.17 },
-  { key: "a", beat: 15.1 },
-  { key: "e", beat: 16.11 },
-  { key: "u", beat: 17.04 },
-  { key: "o", beat: 17.6 },
-  { key: "u", beat: 18.12 },
-  { key: "i", beat: 18.56 },
-  { key: "e", beat: 19.08 },
-  { key: "o", beat: 20.08 },
-  { key: "a", beat: 20.65 },
-  { key: "u", beat: 21.15 },
-  { key: "a", beat: 21.62 },
-  { key: "i", beat: 22.12 },
-  { key: "e", beat: 24.1 },
-  { key: "i", beat: 24.32 },
-  { key: "i", beat: 24.85 },
-  { key: "e", beat: 25.14 },
-  { key: "i", beat: 25.32 },
-  { key: "i", beat: 25.88 },
-  { key: "e", beat: 26.13 },
-  { key: "i", beat: 26.54 },
-  { key: "i", beat: 27.02 },
-  { key: "o", beat: 27.61 },
-  { key: "u", beat: 28.87 },
-  { key: "a", beat: 29.18 },
-  { key: "u", beat: 30.03 },
+  { key: "i", beat: 15.24 },
+  { key: "i", beat: 15.38 },
+  { key: "a", beat: 15.54 },
+  { key: "o", beat: 15.72 },
+  { key: "o", beat: 15.88 },
+  { key: "e", beat: 16.08 },
+  { key: "i", beat: 16.25 },
+  { key: "a", beat: 16.61 },
+  { key: "a", beat: 17.01 },
+  { key: "n", beat: 17.43 },
+  { key: "a", beat: 17.71 },
+  { key: "u", beat: 18 },
+  { key: "e", beat: 18.21 },
+  { key: "a", beat: 18.38 },
+  { key: "i", beat: 18.54 },
+  { key: "a", beat: 18.73 },
+  { key: "a", beat: 19.09 },
+  { key: "i", beat: 19.24 },
+  { key: "a", beat: 19.44 },
+  { key: "a", beat: 19.59 },
+  { key: "e", beat: 19.81 },
+  { key: "o", beat: 20.13 },
+  { key: "o", beat: 20.35 },
+  { key: "a", beat: 20.53 },
+  { key: "a", beat: 20.69 },
+  { key: "o", beat: 21.38 },
+  { key: "u", beat: 21.73 },
+  { key: "a", beat: 21.94 },
+  { key: "a", beat: 22.11 },
+  { key: "a", beat: 22.42 },
+  { key: "o", beat: 22.64 },
+  { key: "a", beat: 22.94 },
+  { key: "i", beat: 23.11 },
+  { key: "a", beat: 23.31 },
+  { key: "a", beat: 23.47 },
+  { key: "a", beat: 23.85 },
+  { key: "i", beat: 24 },
+  { key: "e", beat: 24.2 },
+  { key: "e", beat: 24.37 },
+  { key: "o", beat: 24.56 },
+  { key: "a", beat: 24.74 },
+  { key: "n", beat: 24.92 },
+  { key: "o", beat: 25.09 },
+  { key: "u", beat: 25.27 },
+  { key: "i", beat: 25.44 },
+  { key: "e", beat: 25.77 },
+  { key: "i", beat: 26.13 },
+  { key: "a", beat: 26.29 },
+  { key: "a", beat: 26.65 },
+  { key: "a", beat: 27.56 },
+  { key: "o", beat: 27.9 },
+  { key: "i", beat: 28.1 },
+  { key: "a", beat: 28.27 },
+  { key: "a", beat: 28.44 },
+  { key: "a", beat: 28.8 },
+  { key: "a", beat: 28.99 },
+  { key: "i", beat: 29.35 },
+  { key: "a", beat: 29.51 },
+  { key: "o", beat: 29.68 },
+  { key: "a", beat: 29.87 },
+  { key: "o", beat: 30.03 },
+  { key: "o", beat: 30.25 },
+  { key: "e", beat: 30.4 },
+  { key: "i", beat: 30.56 },
+  { key: "o", beat: 30.72 },
+  { key: "i", beat: 30.91 },
+  { key: "e", beat: 31.14 },
+  { key: "u", beat: 31.3 },
+  { key: "u", beat: 31.45 },
+  { key: "u", beat: 31.63 },
+  { key: "o", beat: 31.8 },
+  { key: "a", beat: 31.97 },
+  { key: "i", beat: 32.13 },
+  { key: "i", beat: 32.33 },
+  { key: "e", beat: 32.51 },
+  { key: "o", beat: 33.22 },
+  { key: "e", beat: 33.43 },
+  { key: "a", beat: 33.71 },
+  { key: "e", beat: 33.94 },
+  { key: "e", beat: 34.3 },
+  { key: "i", beat: 34.63 },
+  { key: "i", beat: 34.86 },
+  { key: "a", beat: 35.02 },
+  { key: "u", beat: 35.37 },
+  { key: "a", beat: 35.53 },
+  { key: "a", beat: 36.22 },
+  { key: "o", beat: 36.57 },
+  { key: "i", beat: 36.73 },
+  { key: "i", beat: 39.33 },
+  { key: "i", beat: 39.56 },
+  { key: "o", beat: 39.73 },
+  { key: "e", beat: 40.07 },
+  { key: "o", beat: 40.43 },
+  { key: "i", beat: 40.79 },
+  { key: "i", beat: 41.57 },
+  { key: "e", beat: 42.23 },
+  { key: "i", beat: 42.53 },
+  { key: "a", beat: 42.91 },
+  { key: "a", beat: 43.64 },
+  { key: "a", beat: 44.04 },
+  { key: "o", beat: 44.99 },
+  { key: "o", beat: 45.18 },
+  { key: "u", beat: 45.44 },
+  { key: "o", beat: 45.72 },
+  { key: "i", beat: 46.05 },
+  { key: "a", beat: 46.45 },
+  { key: "a", beat: 47.19 },
+  { key: "i", beat: 47.35 },
+  { key: "o", beat: 47.86 },
+  { key: "o", beat: 48.21 },
+  { key: "a", beat: 48.51 },
+  { key: "i", beat: 48.92 },
+  { key: "i", beat: 49.28 },
+  { key: "a", beat: 49.63 },
+  { key: "a", beat: 50.3 },
+  { key: "o", beat: 51.06 },
+  { key: "u", beat: 51.36 },
+  { key: "i", beat: 51.73 },
+  { key: "o", beat: 52.08 },
+  { key: "o", beat: 52.44 },
+  { key: "a", beat: 52.75 },
+  { key: "e", beat: 53.17 },
+  { key: "e", beat: 53.85 },
+  { key: "u", beat: 54.21 },
+  { key: "u", beat: 54.57 },
+  { key: "o", beat: 54.93 },
+  { key: "o", beat: 55.29 },
+  { key: "a", beat: 55.58 },
+  { key: "e", beat: 56 },
+  { key: "i", beat: 56.3 },
+  { key: "a", beat: 56.69 },
+  { key: "i", beat: 57.38 },
+  { key: "o", beat: 58.1 },
+  { key: "e", beat: 58.81 },
+  { key: "o", beat: 59.52 },
+  { key: "u", beat: 60.84 },
+  { key: "i", beat: 61.99 },
+  { key: "i", beat: 62.13 },
+  { key: "a", beat: 62.39 },
+  { key: "e", beat: 62.7 },
+  { key: "o", beat: 63.01 },
+  { key: "a", beat: 63.41 },
+  { key: "i", beat: 64.14 },
+  { key: "o", beat: 64.8 },
+  { key: "e", beat: 65.14 },
+  { key: "a", beat: 66.53 },
+  { key: "i", beat: 67.61 },
+  { key: "a", beat: 67.81 },
+  { key: "i", beat: 68 },
+  { key: "e", beat: 68.37 },
+  { key: "a", beat: 68.69 },
+  { key: "e", beat: 69.02 },
+  { key: "a", beat: 69.84 },
+  { key: "u", beat: 70.56 },
+  { key: "a", beat: 70.77 },
+  { key: "e", beat: 71.78 },
+  { key: "u", beat: 72.17 },
+  { key: "u", beat: 73.2 },
+  { key: "a", beat: 73.44 },
+  { key: "e", beat: 73.99 },
+  { key: "i", beat: 74.3 },
+  { key: "a", beat: 74.65 },
+  { key: "e", beat: 75.36 },
+  { key: "e", beat: 75.69 },
+  { key: "o", beat: 76.09 },
+  { key: "o", beat: 76.28 },
+  { key: "a", beat: 76.46 },
+  { key: "a", beat: 76.79 },
+  { key: "i", beat: 77.14 },
+  { key: "o", beat: 77.52 },
+  { key: "u", beat: 77.88 },
+  { key: "u", beat: 78.22 },
+  { key: "i", beat: 78.57 },
+  { key: "u", beat: 78.98 },
+  { key: "e", beat: 79.1 },
+  { key: "e", beat: 79.27 },
+  { key: "i", beat: 79.58 },
+  { key: "e", beat: 80.29 },
+  { key: "i", beat: 80.7 },
+  { key: "a", beat: 81.01 },
+  { key: "o", beat: 81.37 },
+  { key: "o", beat: 81.73 },
+  { key: "a", beat: 82.06 },
+  { key: "i", beat: 82.18 },
+  { key: "o", beat: 82.77 },
+  { key: "i", beat: 83.15 },
+  { key: "a", beat: 83.89 },
+  { key: "e", beat: 84.55 },
 ];
 
 /* =========================================
@@ -262,21 +395,22 @@ const offsetControl = document.getElementById("offsetControl");
 
 let isPlaying = false;
 let startTime = 0;
-let score = 0;
+let currentScore = 0;
 let combo = 0;
 let noteIndex = 0;
 let activeNotes = [];
 let mediaStarted = false;
 let lastCountInt = -1;
 let audioCtx = null;
-let globalOffset = 0.00;
+let globalOffset = 0.00; 
 
-// オフセット変更関数
+// オフセット変更 (Visual Offset 対応)
 window.changeOffset = (val) => {
   globalOffset += val;
   globalOffset = Math.round(globalOffset * 100) / 100;
   document.getElementById("offsetVal").textContent = (globalOffset > 0 ? "+" : "") + globalOffset.toFixed(2);
   
+  // プレイ中なら即座にノーツ位置を再計算して反映
   if (isPlaying) {
       const now = (performance.now() - startTime) / 1000;
       activeNotes.forEach(noteObj => {
@@ -287,7 +421,11 @@ window.changeOffset = (val) => {
   }
 };
 
-// スタートボタン
+const SCORE_PERFECT = 10;
+const SCORE_GREAT = 5;
+const SCORE_GOOD = 2;
+const MAX_RAW_SCORE = (chartData.length > 0) ? chartData.length * SCORE_PERFECT : 1; 
+
 startBtn.onclick = () => {
   if (isPlaying) return;
   if (!audioCtx) {
@@ -298,12 +436,11 @@ startBtn.onclick = () => {
     audioCtx.resume();
   }
   
-  // UIの表示切り替え
   startBtn.style.display = "none";
   tapZone.style.display = "block";
   offsetControl.style.display = "none"; // ★プレイ中は隠す
   
-  score = 0; combo = 0; noteIndex = 0; activeNotes = [];
+  currentScore = 0; combo = 0; noteIndex = 0; activeNotes = [];
   mediaStarted = false; lastCountInt = Math.ceil(COUNTDOWN_SEC);
   
   container.querySelectorAll(".note").forEach(n => n.remove());
@@ -321,7 +458,6 @@ function gameLoop() {
   const now = performance.now();
   const musicTime = (now - startTime) / 1000;
 
-  // カウントダウン処理
   if (musicTime < 0) {
     const count = Math.ceil(-musicTime);
     if (count !== lastCountInt && count > 0) {
@@ -330,7 +466,6 @@ function gameLoop() {
       lastCountInt = count;
     }
   } else {
-    // 楽曲・動画スタート
     if (!mediaStarted) {
       audio.currentTime = 0;
       audio.play().catch(e => console.log("Audio play failed", e));
@@ -340,7 +475,6 @@ function gameLoop() {
       showFeedback("GO!", "#00ffff");
       playSystemSound("start");
     }
-    // 同期補正
     if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
       video.currentTime = audio.currentTime;
     }
@@ -351,7 +485,7 @@ function gameLoop() {
     const data = chartData[noteIndex];
     const baseTargetTime = data.beat * (60 / BPM);
     
-    // オフセット適用
+    // オフセット適用：出現タイミングをズラす
     const actualTargetTime = baseTargetTime + globalOffset;
     
     const currentWidth = getGameWidth();
@@ -359,7 +493,7 @@ function gameLoop() {
     const spawnTime = actualTargetTime - travelTime;
 
     if (musicTime >= spawnTime) {
-      spawnNote(data, baseTargetTime);
+      spawnNote(data, baseTargetTime); // 内部には「元の時間」を保存
       noteIndex++;
     } else {
       break;
@@ -368,6 +502,7 @@ function gameLoop() {
 
   // ノーツ移動と判定
   activeNotes.forEach((noteObj, index) => {
+    // 位置計算：(元の時間 + オフセット) - 現在時間
     const adjustedTime = noteObj.time + globalOffset;
     const timeRemaining = adjustedTime - musicTime;
     
@@ -398,10 +533,11 @@ function endGame() {
     tapZone.style.display = "none";
     
     // ★ゲーム終了時に再表示
-    offsetControl.style.display = "inline-block"; 
+    offsetControl.style.display = "inline-block";
     
     video.pause();
-    alert(`Game Clear! Score: ${score}`);
+    const finalScore = ((currentScore / MAX_RAW_SCORE) * 100).toFixed(2);
+    alert(`Game Clear! Score: ${finalScore}%`);
 }
 
 function spawnNote(data, originalTime) {
@@ -413,24 +549,13 @@ function spawnNote(data, originalTime) {
 }
 
 /* =========================================
-   3. 入力判定（ビジュアルオフセット対応版）
+   3. 入力判定（Visual Offset 対応）
    ========================================= */
 document.addEventListener("keydown", e => {
   if (!isPlaying) return;
-  
-  // 日本語入力対策
-  const keyMap = {
-    "KeyA": "a", 
-    "KeyI": "i", 
-    "KeyU": "u", 
-    "KeyE": "e", 
-    "KeyO": "o", 
-    "KeyN": "n"
-  };
-  const mappedKey = keyMap[e.code];
-
-  if (mappedKey) {
-    processInput(mappedKey);
+  const key = e.key.toLowerCase();
+  if (["a","i","u","e","o","n"].includes(key)) {
+    processInput(key);
   } else {
     triggerLineFlash();
   }
@@ -446,6 +571,9 @@ function processInput(key) {
   triggerLineFlash();
   
   const now = (performance.now() - startTime) / 1000;
+  
+  // 判定： (note.time + offset) が now に近いか
+  // 見た目通りの判定になるため、ユーザーはラインに来た瞬間に押せばOK
   const searchRange = 0.5;
 
   let targetNote;
@@ -457,14 +585,15 @@ function processInput(key) {
   }
 
   if (targetNote) {
+    // 差分計算
     const diff = Math.abs((targetNote.time + globalOffset) - now);
-
-    if (diff < 0.08) { // Perfect
-      judge(targetNote, "PERFECT!!", "#ff00ff", 100, true);
-    } else if (diff < 0.20) { // Great
-      judge(targetNote, "Great!", "#00ff00", 50, false);
-    } else if (diff < 0.40) { // Good
-      judge(targetNote, "Good", "#ffff00", 20, false);
+    
+    if (diff < 0.1) { 
+      judge(targetNote, "PERFECT!!", "#ff00ff", SCORE_PERFECT, true);
+    } else if (diff < 0.25) {
+      judge(targetNote, "Great!", "#00ff00", SCORE_GREAT, false);
+    } else if (diff < 0.45) { // Good判定幅も少し調整
+      judge(targetNote, "Good", "#ffff00", SCORE_GOOD, false);
     }
   }
 }
@@ -475,7 +604,7 @@ function judge(noteObj, text, color, point, isPerfect) {
   const idx = activeNotes.indexOf(noteObj);
   if (idx > -1) activeNotes.splice(idx, 1);
   
-  score += point;
+  currentScore += point;
   combo++;
   updateScore();
   showFeedback(text, color);
@@ -492,7 +621,9 @@ function triggerLineFlash() {
 }
 
 function updateScore() {
-  scoreEl.innerHTML = `Score: ${score} <span style="font-size:0.6em; color:#888;">|</span> Combo: <span style="color:cyan">${combo}</span>`;
+  const percentage = (currentScore / MAX_RAW_SCORE) * 100;
+  scoreEl.innerHTML = `Score: ${percentage.toFixed(2)}% <span style="font-size:0.6em; color:#888;">|</span> Combo: <span style="color:cyan">${combo}</span>`;
+  
   scoreEl.classList.remove("bump");
   void scoreEl.offsetWidth;
   scoreEl.classList.add("bump");
@@ -533,7 +664,7 @@ function createParticles(color) {
 }
 
 /* =========================================
-   4. サウンド生成
+   4. サウンド
    ========================================= */
 function playSystemSound(type) {
   if (!audioCtx) return;
